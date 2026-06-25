@@ -42,9 +42,146 @@ const UNCLIP_RATIO: f32 = 1.6;
 /// Minimum box side (px, in MODEL space) to keep a component.
 const MIN_BOX_SIDE: i32 = 3;
 
+/// 识别置信度丢弃阈值的默认值（rec `text_score`，与历史 `mod.rs` 中的常量一致）。
+const TEXT_SCORE: f32 = 0.5;
+
 /// ImageNet normalization (the variant RapidOCR's det model is trained with).
 const DET_MEAN: [f32; 3] = [0.485, 0.456, 0.406];
 const DET_STD: [f32; 3] = [0.229, 0.224, 0.225];
+
+// --- 检测后处理可调参数（env 覆盖缝，镜像 `OCRSPINE_*` 模式） ---
+
+/// 命名检测 profile 选择：`thai` 选用 [`DetectParams::thai`] 作为基线，其它/未设
+/// 时用 [`DetectParams::default`]（=历史硬编码常量）。个别 `OCRSPINE_DET_*` 仍可
+/// 在所选基线之上逐项覆盖。
+const ENV_DET_PROFILE: &str = "OCRSPINE_DET_PROFILE";
+/// 短边目标长度 `limit_side_len`（limit_type=min）。
+const ENV_DET_LIMIT_SIDE: &str = "OCRSPINE_DET_LIMIT_SIDE";
+/// 概率图二值化阈值 `db_thresh`。
+const ENV_DET_BIN_THRESH: &str = "OCRSPINE_DET_BIN_THRESH";
+/// 保留框的最小 fast-score `db_box_thresh`（<0.5 丢框；泰文短词需调低）。
+const ENV_DET_BOX_THRESH: &str = "OCRSPINE_DET_BOX_THRESH";
+/// unclip 膨胀比例 `db_unclip_ratio`（泰文上叠/下挂声调需更大膨胀含进整簇）。
+const ENV_DET_UNCLIP_RATIO: &str = "OCRSPINE_DET_UNCLIP_RATIO";
+/// 最小框边（model 空间像素）；避免把声调小连通域当独立框或被滤掉。
+const ENV_DET_MIN_BOX_SIDE: &str = "OCRSPINE_DET_MIN_BOX_SIDE";
+/// 同行邻接框水平合并阈值（gap ≤ ratio×行高 则合并）；负值/未设=不合并。
+const ENV_DET_MERGE_X: &str = "OCRSPINE_DET_MERGE_X";
+/// 合并的垂直可达比例（× 行高）：把上叠/下挂声调簇等垂直偏移的框并入同一行。
+const ENV_DET_MERGE_Y: &str = "OCRSPINE_DET_MERGE_Y";
+/// 识别置信度丢弃阈值 `text_score`（rec 置信度低于此值的框被丢，致“为空”）。
+const ENV_TEXT_SCORE: &str = "OCRSPINE_TEXT_SCORE";
+
+/// DBNet 后处理 + 识别丢弃的可调参数集合。
+///
+/// **默认即历史常量**：[`DetectParams::default`] 的每个字段都等于上面的硬编码常量，
+/// 且 `merge_x_ratio = None`（不做水平合并），故不设任何 env 时 zh/en/ja 的检测行为
+/// 与改动前**逐位一致**。[`from_env`](DetectParams::from_env) 先按 `OCRSPINE_DET_PROFILE`
+/// 选基线（`thai` → [`thai`](DetectParams::thai)，否则 default），再用个别
+/// `OCRSPINE_DET_*` env 逐项覆盖。
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DetectParams {
+    /// 短边目标长度（resize 到此，limit_type=min）。
+    pub limit_side_len: u32,
+    /// 概率图二值化阈值。
+    pub bin_thresh: f32,
+    /// 保留框的最小 fast-score。
+    pub box_thresh: f32,
+    /// unclip 膨胀比例。
+    pub unclip_ratio: f32,
+    /// 最小框边（model 空间像素）。
+    pub min_box_side: i32,
+    /// 同行邻接框水平合并阈值（gap ≤ ratio×行高 合并）；`None`=不合并（整个合并步关闭）。
+    pub merge_x_ratio: Option<f32>,
+    /// 合并的垂直可达比例（× 行高）：连通上叠/下挂声调簇等垂直偏移的框。仅在
+    /// `merge_x_ratio` 开启时生效。
+    pub merge_y_ratio: f32,
+    /// 识别置信度丢弃阈值（rec `text_score`）。
+    pub text_score: f32,
+}
+
+impl Default for DetectParams {
+    /// 历史硬编码常量（默认路径），与改动前逐位一致。
+    fn default() -> Self {
+        Self {
+            limit_side_len: LIMIT_SIDE_LEN,
+            bin_thresh: BIN_THRESH,
+            box_thresh: BOX_THRESH,
+            unclip_ratio: UNCLIP_RATIO,
+            min_box_side: MIN_BOX_SIDE,
+            merge_x_ratio: None,
+            merge_y_ratio: 0.0,
+            text_score: TEXT_SCORE,
+        }
+    }
+}
+
+impl DetectParams {
+    /// 泰文检测 profile：`tests/thai_eval.rs::thai_detection_grid_search` 网格搜索固化
+    /// 的端到端最优组（14 条合成 fixtures 上实测 mean CER≈0.25，10/14 exact）。相对默认
+    /// 检测**只动两处**：(1) `text_score` 0.5→0.3，避免泰文短词/声调簇因 rec 置信度偏低
+    /// 被整框丢空；(2) 启用同行邻接框水平合并 `merge_x_ratio=2.0`，把被按 CJK 调参的
+    /// DBNet 切碎的一行重新拼回单个轴对齐框喂给 rec（接近“整行直喂 rec”的上限）。二值
+    /// 化/框 score/unclip 三个阈值经网格搜索确认**保持默认即最优**（bin=0.3、box=0.5、
+    /// unclip=1.6），故此处直接复用默认常量。通过 `OCRSPINE_DET_PROFILE=thai` 一键启用
+    /// （rec 切到泰文模型时）。
+    pub(crate) fn thai() -> Self {
+        Self {
+            // bin/box/unclip：网格搜索确认默认值即最优，复用默认常量（值同 default）。
+            limit_side_len: LIMIT_SIDE_LEN,
+            bin_thresh: BIN_THRESH,
+            box_thresh: BOX_THRESH,
+            unclip_ratio: UNCLIP_RATIO,
+            min_box_side: MIN_BOX_SIDE,
+            // 关键改动一：同行邻接框水平合并（x_ratio=2.0），把切碎的一行拼回单框喂 rec。
+            // merge_y 保持 default=0（即 grid-search BEST 的基线值）；这套 fixtures 上
+            // merge_y 取 0 / 0.8 结果一致，故取与 BEST 一致的 0。
+            merge_x_ratio: Some(2.0),
+            merge_y_ratio: 0.0,
+            // 关键改动二：放宽 rec 置信度丢弃阈值，不丢泰文短词。
+            text_score: 0.3,
+        }
+    }
+
+    /// 按 env 构建：先选基线 profile，再逐项覆盖。未设任何 env → [`default`](Self::default)。
+    pub(crate) fn from_env() -> Self {
+        let mut p = match std::env::var(ENV_DET_PROFILE).ok().as_deref() {
+            Some("thai") => Self::thai(),
+            _ => Self::default(),
+        };
+        if let Some(v) = env_parse::<u32>(ENV_DET_LIMIT_SIDE) {
+            p.limit_side_len = v.max(STRIDE);
+        }
+        if let Some(v) = env_parse::<f32>(ENV_DET_BIN_THRESH) {
+            p.bin_thresh = v;
+        }
+        if let Some(v) = env_parse::<f32>(ENV_DET_BOX_THRESH) {
+            p.box_thresh = v;
+        }
+        if let Some(v) = env_parse::<f32>(ENV_DET_UNCLIP_RATIO) {
+            p.unclip_ratio = v;
+        }
+        if let Some(v) = env_parse::<i32>(ENV_DET_MIN_BOX_SIDE) {
+            p.min_box_side = v;
+        }
+        if let Some(v) = env_parse::<f32>(ENV_DET_MERGE_X) {
+            // 负值显式关闭合并；非负值启用并设阈值。
+            p.merge_x_ratio = if v < 0.0 { None } else { Some(v) };
+        }
+        if let Some(v) = env_parse::<f32>(ENV_DET_MERGE_Y) {
+            p.merge_y_ratio = v.max(0.0);
+        }
+        if let Some(v) = env_parse::<f32>(ENV_TEXT_SCORE) {
+            p.text_score = v;
+        }
+        p
+    }
+}
+
+/// 读取并解析一个 env 标量；未设置或解析失败时返回 `None`（保持基线值）。
+fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
+    std::env::var(name).ok()?.trim().parse::<T>().ok()
+}
 
 /// A detected text box in ORIGINAL image pixel coordinates.
 ///
@@ -68,9 +205,9 @@ pub(crate) struct DetBox {
 /// Computes the model input size for `(w, h)`: scale the short side to
 /// `LIMIT_SIDE_LEN`, clamp the long side to `MAX_SIDE` and short to `MIN_SIDE`,
 /// then round both to a multiple of `STRIDE`. Returns `(model_w, model_h)`.
-fn det_input_size(w: u32, h: u32) -> (u32, u32) {
+fn det_input_size(w: u32, h: u32, limit_side_len: u32) -> (u32, u32) {
     let short = w.min(h).max(1) as f32;
-    let scale = LIMIT_SIDE_LEN as f32 / short;
+    let scale = limit_side_len as f32 / short;
     let mut mw = (w as f32 * scale).round() as u32;
     let mut mh = (h as f32 * scale).round() as u32;
     // Clamp long/short sides.
@@ -89,9 +226,12 @@ fn det_input_size(w: u32, h: u32) -> (u32, u32) {
 }
 
 /// Runs detection on `img`, returning boxes in original-image pixel coords.
-pub(crate) fn detect(models: &Models, img: &RgbImage) -> Result<Vec<DetBox>> {
+///
+/// 后处理阈值/膨胀/合并由 `params` 决定（[`DetectParams::from_env`] 提供 env 覆盖）；
+/// 传 [`DetectParams::default`] 即历史行为。
+pub(crate) fn detect(models: &Models, img: &RgbImage, params: &DetectParams) -> Result<Vec<DetBox>> {
     let (ow, oh) = (img.width(), img.height());
-    let (mw, mh) = det_input_size(ow, oh);
+    let (mw, mh) = det_input_size(ow, oh, params.limit_side_len);
 
     let resized = resize_exact(img, mw, mh);
     let tensor = to_tensor(&resized, DET_MEAN, DET_STD);
@@ -123,7 +263,7 @@ pub(crate) fn detect(models: &Models, img: &RgbImage) -> Result<Vec<DetBox>> {
     // 1) Binarize.
     let mut mask = vec![false; ph * pw];
     for (m, &p) in mask.iter_mut().zip(prob.iter()) {
-        *m = p >= BIN_THRESH;
+        *m = p >= params.bin_thresh;
     }
     // 2) Dilate 2×2 (structuring element anchored top-left, like cv2 with a
     //    2×2 kernel: a pixel turns on if itself or its right/below/diagonal
@@ -142,24 +282,24 @@ pub(crate) fn detect(models: &Models, img: &RgbImage) -> Result<Vec<DetBox>> {
     let mut boxes = Vec::new();
     for c in comps {
         // Skip tiny components (use the AABB extent as a cheap pre-filter).
-        if (c.x1 - c.x0) < MIN_BOX_SIDE || (c.y1 - c.y0) < MIN_BOX_SIDE {
+        if (c.x1 - c.x0) < params.min_box_side || (c.y1 - c.y0) < params.min_box_side {
             continue;
         }
         // 4) Minimum-area rotated rectangle over the component's convex hull.
         let mar = min_area_rect(&c.pixels);
         // Skip degenerate rects (a thin line of pixels).
-        if mar.w < MIN_BOX_SIDE as f32 || mar.h < MIN_BOX_SIDE as f32 {
+        if mar.w < params.min_box_side as f32 || mar.h < params.min_box_side as f32 {
             continue;
         }
         // 5) Fast score: mean prob over the rotated rect's polygon (RapidOCR's
         //    box_score_fast masks the box, not its AABB — essential for skewed
         //    boxes, whose AABB is mostly background).
         let score = mean_prob_quad(&prob, pw, ph, &rect_corners(&mar));
-        if score < BOX_THRESH {
+        if score < params.box_thresh {
             continue;
         }
         // 6) Unclip: inflate the rect outward along both axes.
-        let quad_model = unclip_rect(&mar);
+        let quad_model = unclip_rect(&mar, params.unclip_ratio);
 
         // 7) Scale the quad to original pixels.
         let mut quad = [(0.0f32, 0.0f32); 4];
@@ -193,6 +333,13 @@ pub(crate) fn detect(models: &Models, img: &RgbImage) -> Result<Vec<DetBox>> {
         });
     }
 
+    // 6b) 可选：把同一文本行被切碎的框（横向相邻 + 上叠/下挂声调垂直偏移）聚成单个
+    //     轴对齐框，使 rec 看到完整文本行 —— 对无词间空格、含声调簇的泰文短词尤其关键。
+    //     仅在 profile 显式开启时运行；默认 `None` 不动（zh/en/ja 逐位不变）。
+    if let Some(x_ratio) = params.merge_x_ratio {
+        boxes = merge_row_boxes(boxes, x_ratio, params.merge_y_ratio, ow, oh);
+    }
+
     // 7) Sort top-to-bottom, then left-to-right. Group rows by a y-tolerance so
     //    boxes on the same visual line read left-to-right.
     boxes.sort_by(|a, b| {
@@ -208,6 +355,102 @@ pub(crate) fn detect(models: &Models, img: &RgbImage) -> Result<Vec<DetBox>> {
     });
 
     Ok(boxes)
+}
+
+/// 文本行框聚类合并（仅泰文 profile 等显式开启时调用）。
+///
+/// 用并查集把“应属同一文本行”的框聚成一组，每组取并集 AABB 输出**一个轴对齐框**
+/// （`quad` 退化为 AABB 四角、`angle≈0`，走 upright 裁剪路径；`score` 取组内最大）。
+/// 连通判据：两框各按 `参考高度 = max(两框高)` 把 x 方向外扩 `x_ratio×h/2`、y 方向
+/// 外扩 `y_ratio×h/2` 后若仍相交即连通。这样**既**桥接横向相邻的同行碎框（x 方向），
+/// **又**把上叠声调/下挂元音这类垂直偏移、但 x 范围重叠的框并进同一行（y 方向）——
+/// 后者正是泰文短词（น้ำ / ที่นี่ / ผู้ใหญ่）此前被切碎/漏识的根因。
+/// `x_ratio` 适中可只桥接被切碎的同词碎框、保留真实词间空格对应的较大间隙；
+/// `y_ratio` 取行高的一个零头即可连通声调簇而不致跨行误并（多行间距通常更大）。
+fn merge_row_boxes(boxes: Vec<DetBox>, x_ratio: f32, y_ratio: f32, ow: u32, oh: u32) -> Vec<DetBox> {
+    let n = boxes.len();
+    if n < 2 {
+        return boxes;
+    }
+    // 并查集。
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        let mut r = i;
+        while parent[r] != r {
+            r = parent[r];
+        }
+        // 路径压缩。
+        let mut c = i;
+        while parent[c] != r {
+            let next = parent[c];
+            parent[c] = r;
+            c = next;
+        }
+        r
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if boxes_connected(&boxes[i], &boxes[j], x_ratio, y_ratio) {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+
+    // 按根聚组，组内取并集 AABB；用 HashMap 把根映射到 out 索引，保持稳定。
+    let mut root_to_out: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut out: Vec<DetBox> = Vec::new();
+    for (i, b) in boxes.iter().enumerate() {
+        let r = find(&mut parent, i);
+        match root_to_out.get(&r) {
+            Some(&oi) => {
+                let acc = &mut out[oi];
+                acc.x0 = acc.x0.min(b.x0);
+                acc.y0 = acc.y0.min(b.y0);
+                acc.x1 = acc.x1.max(b.x1);
+                acc.y1 = acc.y1.max(b.y1);
+                acc.score = acc.score.max(b.score);
+            }
+            None => {
+                root_to_out.insert(r, out.len());
+                out.push(*b);
+            }
+        }
+    }
+
+    // 收尾：夹回图像范围，并把 quad/angle 规整为合并后的轴对齐框。
+    for b in &mut out {
+        b.x0 = b.x0.clamp(0, ow as i32);
+        b.y0 = b.y0.clamp(0, oh as i32);
+        b.x1 = b.x1.clamp(0, ow as i32);
+        b.y1 = b.y1.clamp(0, oh as i32);
+        b.quad = aabb_quad(b.x0, b.y0, b.x1, b.y1);
+        b.angle = 0.0;
+    }
+    out
+}
+
+/// 两框是否“属同一文本行”：以 `max(两框高)` 为参考高度，x 方向外扩 `x_ratio×h/2`、
+/// y 方向外扩 `y_ratio×h/2` 后若 AABB 仍相交即连通（对称、与遍历顺序无关）。
+fn boxes_connected(a: &DetBox, b: &DetBox, x_ratio: f32, y_ratio: f32) -> bool {
+    let ah = (a.y1 - a.y0).max(1) as f32;
+    let bh = (b.y1 - b.y0).max(1) as f32;
+    let h = ah.max(bh);
+    let mx = x_ratio * h * 0.5;
+    let my = y_ratio * h * 0.5;
+    let (ax0, ay0, ax1, ay1) = (a.x0 as f32, a.y0 as f32, a.x1 as f32, a.y1 as f32);
+    let (bx0, by0, bx1, by1) = (b.x0 as f32, b.y0 as f32, b.x1 as f32, b.y1 as f32);
+    let x_overlap = (ax0 - mx) <= (bx1 + mx) && (bx0 - mx) <= (ax1 + mx);
+    let y_overlap = (ay0 - my) <= (by1 + my) && (by0 - my) <= (ay1 + my);
+    x_overlap && y_overlap
+}
+
+/// 轴对齐 bbox 的四角（top-left, top-right, bottom-right, bottom-left）。
+fn aabb_quad(x0: i32, y0: i32, x1: i32, y1: i32) -> [(f32, f32); 4] {
+    let (x0, y0, x1, y1) = (x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+    [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 }
 
 /// 2×2 dilation: output pixel `(x,y)` is on if any of `(x,y)`, `(x+1,y)`,
@@ -544,11 +787,11 @@ fn point_in_quad(p: (f32, f32), quad: &[(f32, f32); 4]) -> bool {
 /// `distance = area * unclip_ratio / perimeter` (Vatti-clip approximation) and
 /// returns the four corners ordered along the rect's own axes: top-left,
 /// top-right, bottom-right, bottom-left (in mask space).
-pub(crate) fn unclip_rect(r: &RotatedRect) -> [(f32, f32); 4] {
+pub(crate) fn unclip_rect(r: &RotatedRect, unclip_ratio: f32) -> [(f32, f32); 4] {
     let area = r.w * r.h;
     let perimeter = 2.0 * (r.w + r.h);
     let dist = if perimeter > 0.0 {
-        area * UNCLIP_RATIO / perimeter
+        area * unclip_ratio / perimeter
     } else {
         0.0
     };

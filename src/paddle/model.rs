@@ -31,6 +31,16 @@ pub(crate) type Runnable = TypedRunnableModel<TypedModel>;
 /// `*.onnx` model files. Overrides the in-crate default.
 const ENV_MODELS_DIR: &str = "OCRSPINE_MODELS";
 
+/// 识别模型路径覆盖（语言切换缝，镜像 [`ENV_MODELS_DIR`] 的覆盖语义）：设置后
+/// rec ONNX 从该**文件**加载；未设置时仍用 bundled `ppocrv5_rec.onnx`。用于换上
+/// 其他语言的 rec 模型（如泰文），检测/方向分类与语言无关、原样复用。
+const ENV_REC_MODEL: &str = "OCRSPINE_REC_MODEL";
+
+/// 识别字典路径覆盖：设置后字典从该**磁盘文件**加载；未设置时用编译期内嵌的
+/// `ppocr_keys_v5.txt`。字典须与所用 rec 模型 index 对齐（行数 == rec 输出宽度）。
+/// 与 [`ENV_REC_MODEL`] 配套使用。
+const ENV_REC_DICT: &str = "OCRSPINE_REC_DICT";
+
 /// PP-OCRv5 DBNet text-detection model. Input `[1,3,H,W]`, output prob map
 /// `[1,1,H,W]`.
 const DET_FILE: &str = "ppocrv5_det.onnx";
@@ -74,6 +84,22 @@ fn read_model(file: &str) -> Result<Vec<u8>> {
     })
 }
 
+/// 读取识别模型字节：优先 [`ENV_REC_MODEL`] 指向的文件（语言切换缝），否则回退到
+/// [`models_dir`] 下的 bundled rec 文件——**未设置该 env 时行为与之前字节一致**。
+fn read_rec_model() -> Result<Vec<u8>> {
+    if let Some(path) = std::env::var_os(ENV_REC_MODEL) {
+        let path = PathBuf::from(path);
+        return std::fs::read(&path).map_err(|e| {
+            Error::Unsupported(format!(
+                "paddle: rec model not found at {} ({e}). Unset `{ENV_REC_MODEL}` \
+                 to use the bundled rec model.",
+                path.display(),
+            ))
+        });
+    }
+    read_model(REC_FILE)
+}
+
 /// Builds an `InferenceModel` from ONNX bytes, mapping any tract error into our
 /// typed `Unsupported` error (a failure here is a build/environment problem,
 /// surfaced — never a panic).
@@ -103,11 +129,30 @@ pub(crate) struct CharTable {
 }
 
 impl CharTable {
+    /// 默认字典：从编译期内嵌的 `ppocr_keys_v5.txt` 构建。**默认路径行为不变。**
     fn load() -> Self {
+        Self::from_text(KEYS)
+    }
+
+    /// 从磁盘字典文件构建（[`ENV_REC_DICT`] 覆盖用）。字典须为 index-aligned 形式：
+    /// 第 0 行为 CTC blank、其后为字符、可含末行空格，**行数 == rec 输出宽度**。
+    fn from_path(path: &std::path::Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            Error::Unsupported(format!(
+                "paddle: rec dictionary not found at {} ({e}). Unset `{ENV_REC_DICT}` \
+                 to use the embedded dictionary.",
+                path.display(),
+            ))
+        })?;
+        Ok(Self::from_text(&text))
+    }
+
+    /// 解析 index-aligned 字典文本（任意长度，**不硬编码宽度**）。
+    fn from_text(text: &str) -> Self {
         // Split on '\n' preserving every line, including a trailing space line.
         // A final empty element from a trailing newline is dropped (the file
         // ends with the space line + '\n'); the space line itself is kept.
-        let mut table: Vec<String> = KEYS.split('\n').map(|s| s.to_string()).collect();
+        let mut table: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
         if table.last().map(|s| s.is_empty()).unwrap_or(false) {
             table.pop();
         }
@@ -124,7 +169,9 @@ impl CharTable {
         self.table.get(i).map(String::as_str).unwrap_or("")
     }
 
-    /// The number of classes (should equal the rec model's output width, 18385).
+    /// The number of classes (equals the rec model's output width — 18385 for the
+    /// bundled zh/en/ja model, or e.g. 526 for the Thai rec model via the dict
+    /// override). Used to bound decode lookups, so it must NOT be hard-coded.
     #[inline]
     pub(crate) fn len(&self) -> usize {
         self.table.len()
@@ -149,11 +196,17 @@ impl Models {
     /// expensive `into_optimized()` happens lazily per shape bucket), so it is
     /// cheap; only the dictionary is decoded eagerly.
     pub(crate) fn new() -> Result<Self> {
+        // 字典来源：设置了 `OCRSPINE_REC_DICT` 则从磁盘加载（语言切换），
+        // 否则用编译期内嵌的中文字典（默认行为不变）。
+        let chars = match std::env::var_os(ENV_REC_DICT) {
+            Some(path) => CharTable::from_path(std::path::Path::new(&path))?,
+            None => CharTable::load(),
+        };
         Ok(Models {
             det: Mutex::new(HashMap::new()),
             rec: Mutex::new(HashMap::new()),
             cls: std::sync::OnceLock::new(),
-            chars: CharTable::load(),
+            chars,
         })
     }
 
@@ -174,7 +227,7 @@ impl Models {
         if let Some(r) = self.rec.lock().unwrap().get(&key) {
             return Ok(r.clone());
         }
-        let runnable = std::sync::Arc::new(build_runnable(proto(&read_model(REC_FILE)?)?, 48, w)?);
+        let runnable = std::sync::Arc::new(build_runnable(proto(&read_rec_model()?)?, 48, w)?);
         self.rec.lock().unwrap().insert(key, runnable.clone());
         Ok(runnable)
     }

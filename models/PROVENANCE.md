@@ -40,6 +40,9 @@ The pre-conversion sources (all Apache-2.0):
   (`preprocessing/textline-orientation/PP-LCNet_x1_0_textline_ori.onnx`).
 * rec dictionary: <https://huggingface.co/monkt/paddleocr-onnx>
   (`languages/chinese/dict.txt` — 18383 characters).
+* Thai rec + Thai dict: <https://huggingface.co/monkt/paddleocr-onnx>
+  (`languages/thai/rec.onnx`, `languages/thai/dict.txt` — the official PaddleOCR
+  `th_PP-OCRv5_mobile_rec` model, 524 characters).
 
 ## `ppocrv5_det.onnx` — PP-OCRv5 text detection (DBNet)
 
@@ -83,6 +86,31 @@ The pre-conversion sources (all Apache-2.0):
 | **Upstream** | <https://huggingface.co/monkt/paddleocr-onnx> (`languages/chinese/dict.txt`, 18383 characters — PP-OCRv5 character set covering Simplified/Traditional Chinese, Japanese, Latin, digits, and symbols). |
 | **License** | **Apache-2.0** (PaddlePaddle Authors). SPDX: `Apache-2.0`. |
 | **Baking** | The raw 18383-line dict is baked to the index-aligned form (prepend `blank`, append a space line → 18385 lines), matching `CharTable::load()`'s expectation. |
+
+## `ppocrv5_rec_th.onnx` — PP-OCRv5 **Thai** text recognition (CRNN + CTC)
+
+| field | value |
+|---|---|
+| **What** | CRNN + CTC Thai recognition model. Input `[N,3,48,W]`, output softmax probs `[N,T,526]`. Recognizes Thai + Latin/ASCII + digits. |
+| **Upstream model** | PP-OCRv5 Thai mobile recognition (`th_PP-OCRv5_mobile_rec`), index-aligned to `ppocr_keys_th.txt`. Upstream-reported accuracy 82.68% on PaddleOCR's Thai test set. |
+| **Upstream** | <https://github.com/PaddlePaddle/PaddleOCR> |
+| **Pre-converted source** | <https://huggingface.co/monkt/paddleocr-onnx> (`languages/thai/rec.onnx`) |
+| **License** | **Apache-2.0** (PaddlePaddle Authors). SPDX: `Apache-2.0`. |
+| **Source sha256** (pre-strip) | `2b6e56b1872200349e227574c25aeb0e0f9af9b8356e9ff5f75ac543a535669a` |
+| **Bundled sha256** (post-strip) | `cf7c1dfe445428ba7d0037807cca6d6a09ca2974d9ce90633f101d39aa8488d9` |
+| **Conversion** | Already ONNX upstream (opset 14) via Paddle2ONNX. The pre-converted file used paddle2onnx's illegal dotted dynamic-dim names (`DynamicDimension.0..3`, containing a `.`) that `tract` cannot parse, so the same deterministic strip step as the other models was applied: rename those dims to legal identifiers (`.`→`_`) and clear `value_info`. **No weight changes.** Strip command (reproducible): `python -c "import onnx; m=onnx.load('rec.onnx'); [setattr(d,'dim_param',d.dim_param.replace('.','_')) for vi in list(m.graph.input)+list(m.graph.output) for d in vi.type.tensor_type.shape.dim if d.dim_param and '.' in d.dim_param]; del m.graph.value_info[:]; onnx.checker.check_model(m); onnx.save(m,'ppocrv5_rec_th.onnx')"` |
+| **Default-path note** | NOT loaded by default. The bundled zh/en/ja `ppocrv5_rec.onnx` + embedded `ppocr_keys_v5.txt` stay the default; this Thai model is opt-in via `OCRSPINE_REC_MODEL` + `OCRSPINE_REC_DICT`. Detection (`ppocrv5_det.onnx`) and orientation (`ppocrv5_cls.onnx`) are language-agnostic and reused. |
+
+## `ppocr_keys_th.txt` — PP-OCRv5 Thai recognition character dictionary
+
+| field | value |
+|---|---|
+| **What** | Thai recognition character dictionary, **index-aligned** to the `ppocrv5_rec_th.onnx` output class axis (line 0 = CTC blank, lines 1..524 = characters, last line = a single space). Total 526 lines = the Thai rec model's output width. |
+| **Upstream** | <https://huggingface.co/monkt/paddleocr-onnx> (`languages/thai/dict.txt`, 524 characters — the PaddleOCR `ppocrv5_th_dict.txt` Thai character set + Latin/ASCII + symbols). |
+| **License** | **Apache-2.0** (PaddlePaddle Authors). SPDX: `Apache-2.0`. |
+| **Source sha256** (raw 524-char dict) | `57f5406f94bb6688fb7077f7be65f08bbd71cecf48c01ea26c522cb5c4836b7a` |
+| **Bundled sha256** (baked 526-line) | `dd7f4db1ed82363e6feebc373f14f1830739b0345a7ee9e68adaf08bd2d14b92` |
+| **Baking** | The raw 524-line dict is baked to the index-aligned form (prepend `blank`, append a space line → 526 lines), matching `CharTable::from_path()`'s expectation. Loaded from disk via `OCRSPINE_REC_DICT` (NOT embedded — the embedded dict stays the zh/en/ja one). |
 
 See the top-level [`NOTICE`](../NOTICE) for the attribution that must accompany
 binary distributions of these bundled models.

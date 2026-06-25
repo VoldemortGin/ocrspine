@@ -30,10 +30,8 @@ use crate::error::Result;
 use crate::geom::BBox;
 use crate::input::OcrImage;
 
+use self::detect::DetectParams;
 use self::model::Models;
-
-/// Below this recognizer confidence (`[0,1]`) a result is dropped (`text_score`).
-const TEXT_SCORE: f32 = 0.5;
 
 /// Boxes within this angle of horizontal (radians, ≈2.9°) are treated as upright
 /// and use the axis-aligned crop path — keeping upright text byte-for-byte as it
@@ -71,7 +69,9 @@ impl OcrEngine for PaddleOcr {
     /// skipped. Boxes are emitted in image pixel coordinates.
     fn recognize(&self, image: &OcrImage) -> Result<Vec<OcrWord>> {
         let rgb = image.rgb();
-        let boxes = detect::detect(&self.models, rgb)?;
+        // 检测/识别后处理参数（env 覆盖缝）：不设任何 env → 历史默认，逐位不变。
+        let params = DetectParams::from_env();
+        let boxes = detect::detect(&self.models, rgb, &params)?;
 
         // Recognize each detected box in parallel. The work is CPU-bound (crop →
         // classify → CRNN+CTC) and an image yields dozens–hundreds of boxes, so
@@ -98,7 +98,7 @@ impl OcrEngine for PaddleOcr {
                 let oriented = classify::classify_and_orient(&self.models, crop)?;
                 let rec = recognize::recognize(&self.models, &oriented)?;
                 let text = rec.text.trim().to_string();
-                if text.is_empty() || rec.confidence < TEXT_SCORE {
+                if text.is_empty() || rec.confidence < params.text_score {
                     return Ok(None);
                 }
                 Ok(Some(OcrWord {

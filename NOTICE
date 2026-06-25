@@ -13,23 +13,39 @@ This distribution bundles third-party data whose license requires that its
 attribution notice be carried in redistributions. The authoritative, per-file
 provenance and conversion record are retained in `models/PROVENANCE.md`.
 
-* PaddleOCR PP-OCR models and recognition dictionary
+* PaddleOCR PP-OCR models and recognition dictionaries
   (`models/ppocrv5_det.onnx`,
    `models/ppocrv5_rec.onnx`,
    `models/ppocrv5_cls.onnx`,
-   `models/ppocr_keys_v5.txt`)
+   `models/ppocr_keys_v5.txt`,
+   `models/ppocrv5_rec_th.onnx`,
+   `models/ppocr_keys_th.txt`)
   Copyright (c) PaddlePaddle Authors.
   Licensed under the Apache License, Version 2.0.
   The bundled files are the PP-OCRv5 mobile text-detection and text-recognition
-  models, the PP-LCNet text-line-orientation classification model, and the
-  PP-OCRv5 recognition character dictionary, converted to ONNX (via Paddle2ONNX)
-  from the upstream PaddlePaddle weights, then post-processed by a deterministic
-  ONNX dim-name/shape-hint cleanup so the pure-Rust `tract` runtime can parse
-  them (no weight changes). The ONNX weights ship as data files; the recognition
-  dictionary is embedded into the binary via `include_str!`.
+  models, the PP-LCNet text-line-orientation classification model, the PP-OCRv5
+  recognition character dictionary, and the PP-OCRv5 Thai recognition model
+  (`th_PP-OCRv5_mobile_rec`) with its Thai recognition dictionary, converted to
+  ONNX (via Paddle2ONNX) from the upstream PaddlePaddle weights, then
+  post-processed by a deterministic ONNX dim-name/shape-hint cleanup so the
+  pure-Rust `tract` runtime can parse them (no weight changes). The ONNX weights
+  ship as data files; the default recognition dictionary is embedded into the
+  binary via `include_str!`, while the Thai dictionary loads from disk via the
+  `OCRSPINE_REC_DICT` override.
   Source: https://github.com/PaddlePaddle/PaddleOCR
   Per-file provenance and the conversion record are retained in
   `models/PROVENANCE.md`.
+
+* Noto Sans Thai and Sarabun fonts (test fixtures only)
+  (`tests/fixtures/thai/fonts/NotoSansThai-VF.ttf`,
+   `tests/fixtures/thai/fonts/Sarabun-Regular.ttf`)
+  Noto Sans Thai: Copyright The Noto Project Authors.
+  Sarabun: Copyright Cadson Demak Co., Ltd.
+  Both licensed under the SIL Open Font License, Version 1.1 (the accompanying
+  `OFL-NotoSansThai.txt` / `OFL-Sarabun.txt` next to the fonts). Used only to
+  render the synthetic Thai OCR test fixtures under `tests/fixtures/thai/`; not
+  linked into or shipped with the library.
+  Source: https://github.com/google/fonts
 
 Third-party Rust dependencies are distributed under their own permissive
 licenses (MIT, Apache-2.0, BSD, Zlib, ISC, Unicode, and similar). Apache-2.0 is
