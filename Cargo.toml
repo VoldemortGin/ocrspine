@@ -1,0 +1,22 @@
+[package]
+name = "ocrspine"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Domain-neutral pure-Rust OCR (PP-OCRv5 via tract-onnx): image -> words with bbox + confidence."
+repository = "https://github.com/VoldemortGin/ocrspine"
+rust-version = "1.96"
+publish = false   # local path dep for now; see README "Publishing" note
+
+[dependencies]
+tract-onnx = "0.21"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff", "bmp"] }
+rayon = "1"
+thiserror = "2"
+
+[dev-dependencies]
+# none needed beyond std + image (already a dep)
+
+[profile.release]
+opt-level = 3
+lto = "thin"
