@@ -1,0 +1,24 @@
+ocrspine-models
+Copyright 2026 ocrspine authors
+
+Licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License in the accompanying LICENSE file or at
+http://www.apache.org/licenses/LICENSE-2.0.
+
+This distribution redistributes third-party model weights whose license requires
+that their attribution notice be carried in redistributions. The authoritative,
+per-file provenance and conversion record are in PROVENANCE.md (shipped alongside
+this NOTICE in this package).
+
+* PaddleOCR PP-OCR models and recognition dictionary
+  (ppocrv5_det.onnx, ppocrv5_rec.onnx, ppocrv5_cls.onnx, ppocr_keys_v5.txt)
+  Copyright (c) PaddlePaddle Authors.
+  Licensed under the Apache License, Version 2.0.
+  The bundled files are the PP-OCRv5 mobile text-detection and text-recognition
+  models, the PP-LCNet text-line-orientation classification model, and the
+  PP-OCRv5 recognition character dictionary, converted to ONNX (via Paddle2ONNX)
+  from the upstream PaddlePaddle weights, then post-processed by a deterministic
+  ONNX dim-name/shape-hint cleanup so the pure-Rust `tract` runtime can parse them
+  (no weight changes). Conversion is a mechanical format transcode; it does not
+  change the licensing of the weights.
+  Source: https://github.com/PaddlePaddle/PaddleOCR

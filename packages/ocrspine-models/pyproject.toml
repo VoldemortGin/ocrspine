@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ocrspine-models"
+# Pure-data, universal (py3-none-any) wheel: the default PP-OCRv5 ONNX model
+# weights (~28 MB) that the spine family's pure-Rust OCR engine (`ocrspine`)
+# loads at runtime. The host wheels (pdfspine / pptspine / docspine) compile the
+# OCR *code* in but ship no weights; this one shared companion supplies them,
+# resolved at runtime via `ocrspine_models.models_dir()` (which the hosts export
+# as the engine's `OCRSPINE_MODELS` env var). Everything is offline — no download.
+#
+# Static version: it tracks the bundled default model set (det / rec / cls + the
+# zh/en/ja recognition dictionary), which changes rarely and independently of the
+# host releases. Bump it only when the shipped weights change.
+version = "0.0.1"
+description = "Default PP-OCRv5 ONNX model weights for the ocrspine PaddleOCR engine (shared data companion for pdfspine / pptspine / docspine)."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "ocrspine_models/NOTICE"]
+requires-python = ">=3.9"
+authors = [{ name = "ocrspine contributors" }]
+keywords = ["ocr", "paddleocr", "pp-ocr", "onnx", "ocrspine", "spine"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    # NB: no "License ::" trove classifier — the SPDX `license = "Apache-2.0"`
+    # expression (PEP 639) is the single source of truth; carrying both is
+    # rejected by recent build tooling (metadata 2.4 license-expression conflict).
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Text Processing :: General",
+]
+
+[project.urls]
+Homepage = "https://github.com/VoldemortGin/ocrspine"
+Repository = "https://github.com/VoldemortGin/ocrspine"
+Issues = "https://github.com/VoldemortGin/ocrspine/issues"
+
+# The ONNX weights (+ the recognition dictionary) are NOT a second copy in git: a
+# custom build hook (hatch_build.py) force-includes them from the canonical
+# `ocrspine/models/` source of truth into both the sdist and the wheel at build
+# time, so there is exactly one git-tracked copy of the models (in ocrspine).
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
+
+# The Python import package (the .py shim + carried NOTICE / PROVENANCE / py.typed);
+# the ONNX + keys data files are injected by the hook, not tracked here.
+[tool.hatch.build.targets.wheel]
+packages = ["ocrspine_models"]
+
+[tool.hatch.build.targets.sdist]
+include = ["ocrspine_models", "hatch_build.py", "README.md", "LICENSE"]
