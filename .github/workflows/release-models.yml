@@ -1,0 +1,85 @@
+# Release workflow for the `ocrspine-models` data distribution — the default
+# PP-OCRv5 ONNX model weights (~28 MB) shared by the spine family's OCR hosts
+# (pdfspine / pptspine / docspine). It is a pure-Python, universal
+# (py3-none-any) hatchling package: NO maturin, NO platform matrix. The weights
+# are NOT a second copy in git — `hatch_build.py` force-includes them from the
+# canonical `ocrspine/models/` source of truth into the sdist + wheel at build
+# time, so the runner needs a FULL checkout (the default `actions/checkout@v4`)
+# for `models/` to be present.
+#
+# Tagging: this workflow triggers on a PREFIXED tag `ocrspine-models-v*` (e.g.
+# `ocrspine-models-v0.0.1`), deliberately distinct from the `ocrspine` Rust
+# crate's own version tags, so cutting a models release never collides with a
+# crate release.
+#
+# Publishing is tokenless PyPI Trusted Publishing (OIDC) — NO API tokens, NO
+# `password:`.
+#
+# USER-GATED PREREQUISITE (one-time, in the PyPI web UI):
+#   FIRST PUBLISH: on PyPI -> account -> Publishing -> "Add a pending publisher"
+#     Owner = VoldemortGin, Repo = ocrspine, Workflow = release-models.yml,
+#     Environment = pypi, Project name = ocrspine-models
+#   (and the same on test.pypi.org with Environment = testpypi for the dry run).
+#   Then create the GitHub Environments `pypi` and `testpypi`
+#   (Settings -> Environments). Until that is done, `publish` fails "not authorized".
+
+name: release-models
+
+on:
+  push:
+    tags: ["ocrspine-models-v*"]
+  workflow_dispatch:
+    inputs:
+      publish_target:
+        description: "Where to publish (pypi or testpypi)"
+        default: "testpypi"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (sdist + wheel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build frontend
+        run: python -m pip install --upgrade build
+      # The custom hatch build hook force-includes the default PP-OCRv5 models
+      # from ocrspine/models/ into both the sdist and the universal wheel.
+      - name: Build sdist + wheel
+        run: python -m build packages/ocrspine-models
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: packages/ocrspine-models/dist/*
+
+  publish:
+    name: publish (Trusted Publishing / OIDC)
+    needs: [build]
+    runs-on: ubuntu-latest
+    # Tag push -> PyPI. Manual dispatch -> the chosen target (default TestPyPI).
+    environment: ${{ (github.event_name == 'push' || github.event.inputs.publish_target == 'pypi') && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write # REQUIRED for OIDC Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: packages/ocrspine-models/dist
+      - name: Publish to TestPyPI
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target != 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: packages/ocrspine-models/dist/
+          skip-existing: true
+      - name: Publish to PyPI
+        if: github.event_name == 'push' || github.event.inputs.publish_target == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/ocrspine-models/dist/
+          skip-existing: true
