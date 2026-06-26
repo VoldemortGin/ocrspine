@@ -1,5 +1,7 @@
 # ocrspine-models
 
+[![PyPI](https://img.shields.io/pypi/v/ocrspine-models.svg)](https://pypi.org/project/ocrspine-models/)
+
 The default PP-OCRv5 ONNX model weights for [ocrspine](https://github.com/VoldemortGin/ocrspine)'s
 pure-Rust PaddleOCR engine — the **shared data companion** for the spine document
 family (`pdfspine` / `pptspine` / `docspine`).
@@ -9,7 +11,8 @@ This is a **pure-data distribution**. The host wheels already contain the OCR
 of weights, so the family keeps exactly one git-tracked copy of the models (in the
 `ocrspine` repo) and one published copy of the data wheel.
 
-You normally do not install it directly — it is a hard dependency of the hosts, so
+It is **published on PyPI** — `pip install ocrspine-models` — though you normally
+do not install it directly: it is a hard dependency of the hosts, so
 `pip install pdfspine` (or `pptspine` / `docspine`) pulls it in automatically. The
 host then resolves the models at runtime by reading
 `ocrspine_models.models_dir()` and exporting it as the engine's `OCRSPINE_MODELS`

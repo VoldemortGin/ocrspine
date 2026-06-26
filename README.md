@@ -83,6 +83,14 @@ weights in `models/` would be packaged with the crate (or fetched out-of-band by
 consumers via `OCRSPINE_MODELS`). For a git dependency, point at the repo and
 commit the `models/` directory.
 
+The model weights, separately, **are** published — as a standalone pure-data
+Python package, [`ocrspine-models`](https://pypi.org/project/ocrspine-models/)
+(`pip install ocrspine-models`), which the spine document hosts (pdfspine /
+pptspine / docspine) take as a runtime dependency so they can ship OCR weights
+without embedding them in their wheels. See
+[`packages/ocrspine-models/`](packages/ocrspine-models/). This does not change the
+fact that the `ocrspine` crate itself stays `publish = false` and off crates.io.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
