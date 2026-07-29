@@ -14,12 +14,12 @@ name = "ocrspine-models"
 # Static version: it tracks the bundled default model set (det / rec / cls + the
 # zh/en/ja recognition dictionary), which changes rarely and independently of the
 # host releases. Bump it only when the shipped weights change.
-version = "0.0.1"
+version = "0.0.2"
 description = "Default PP-OCRv5 ONNX model weights for the ocrspine PaddleOCR engine (shared data companion for pdfspine / pptspine / docspine)."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "ocrspine_models/NOTICE"]
-requires-python = ">=3.9"
+requires-python = ">=3.14,<3.15"
 authors = [{ name = "ocrspine contributors" }]
 keywords = ["ocr", "paddleocr", "pp-ocr", "onnx", "ocrspine", "spine"]
 classifiers = [

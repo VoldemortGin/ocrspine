@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install build frontend
         run: python -m pip install --upgrade build
       # The custom hatch build hook force-includes the default PP-OCRv5 models
