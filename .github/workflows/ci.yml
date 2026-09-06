@@ -1,0 +1,50 @@
+# CI for the `ocrspine` Rust crate itself: the same three gates CLAUDE.md asks
+# for locally — `cargo fmt --check`, `cargo clippy --release -- -D warnings`,
+# `cargo test --release`. The acceptance tests load the REAL PP-OCRv5 ONNX
+# weights, which are git-tracked under `models/` (~34 MB, no LFS, no download),
+# so the default `actions/checkout@v4` is all the runner needs. `OCRSPINE_MODELS`
+# is exported exactly as the local build instructions do; the crate would also
+# fall back to `CARGO_MANIFEST_DIR/models` on its own.
+#
+# The heavy Thai eval / grid-search tests are `#[ignore]` and stay out of CI.
+#
+# Model releases are a separate concern — see `release-models.yml`.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  OCRSPINE_MODELS: ${{ github.workspace }}/models
+
+jobs:
+  gate:
+    name: fmt / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (pinned to Cargo.toml rust-version)
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy (-D warnings)
+        run: cargo clippy --release -- -D warnings
+      - name: cargo test --release
+        run: cargo test --release
