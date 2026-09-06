@@ -229,7 +229,11 @@ fn det_input_size(w: u32, h: u32, limit_side_len: u32) -> (u32, u32) {
 ///
 /// 后处理阈值/膨胀/合并由 `params` 决定（[`DetectParams::from_env`] 提供 env 覆盖）；
 /// 传 [`DetectParams::default`] 即历史行为。
-pub(crate) fn detect(models: &Models, img: &RgbImage, params: &DetectParams) -> Result<Vec<DetBox>> {
+pub(crate) fn detect(
+    models: &Models,
+    img: &RgbImage,
+    params: &DetectParams,
+) -> Result<Vec<DetBox>> {
     let (ow, oh) = (img.width(), img.height());
     let (mw, mh) = det_input_size(ow, oh, params.limit_side_len);
 
@@ -367,7 +371,13 @@ pub(crate) fn detect(models: &Models, img: &RgbImage, params: &DetectParams) -> 
 /// 后者正是泰文短词（น้ำ / ที่นี่ / ผู้ใหญ่）此前被切碎/漏识的根因。
 /// `x_ratio` 适中可只桥接被切碎的同词碎框、保留真实词间空格对应的较大间隙；
 /// `y_ratio` 取行高的一个零头即可连通声调簇而不致跨行误并（多行间距通常更大）。
-fn merge_row_boxes(boxes: Vec<DetBox>, x_ratio: f32, y_ratio: f32, ow: u32, oh: u32) -> Vec<DetBox> {
+fn merge_row_boxes(
+    boxes: Vec<DetBox>,
+    x_ratio: f32,
+    y_ratio: f32,
+    ow: u32,
+    oh: u32,
+) -> Vec<DetBox> {
     let n = boxes.len();
     if n < 2 {
         return boxes;

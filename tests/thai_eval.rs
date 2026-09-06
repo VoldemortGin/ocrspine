@@ -170,7 +170,13 @@ fn thai_ppocrv5_cer_eval() {
     for (s, (hyp, c)) in samples.iter().zip(results.iter()) {
         cers.push(*c);
         sims.push(similarity(&normalize(&s.text), hyp));
-        eprintln!("{:<14} {:<26} {:<26} {:>7.4}", s.file, normalize(&s.text), hyp, c);
+        eprintln!(
+            "{:<14} {:<26} {:<26} {:>7.4}",
+            s.file,
+            normalize(&s.text),
+            hyp,
+            c
+        );
     }
 
     let mean = cers.iter().sum::<f64>() / cers.len() as f64;
@@ -289,10 +295,19 @@ fn thai_detection_grid_search() {
     }
 
     rows.sort_by(|a, b| a.mean.partial_cmp(&b.mean).unwrap());
-    eprintln!("\n=== Thai detection grid search ({} combos) ===", rows.len());
+    eprintln!(
+        "\n=== Thai detection grid search ({} combos) ===",
+        rows.len()
+    );
     eprintln!("{:>8}  {:>7}  params", "meanCER", "exact");
     for r in &rows {
-        eprintln!("{:>8.4}  {:>5}/{}  {}", r.mean, r.exact, samples.len(), r.combo.label());
+        eprintln!(
+            "{:>8.4}  {:>5}/{}  {}",
+            r.mean,
+            r.exact,
+            samples.len(),
+            r.combo.label()
+        );
     }
     let best = &rows[0];
     eprintln!(
@@ -308,7 +323,13 @@ fn thai_detection_grid_search() {
     let results = eval_samples(&engine, &samples);
     eprintln!("--- per-sample @ BEST ---");
     for (s, (hyp, c)) in samples.iter().zip(results.iter()) {
-        eprintln!("{:<14} {:<26} {:<26} {:>7.4}", s.file, normalize(&s.text), hyp, c);
+        eprintln!(
+            "{:<14} {:<26} {:<26} {:>7.4}",
+            s.file,
+            normalize(&s.text),
+            hyp,
+            c
+        );
     }
 }
 
