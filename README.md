@@ -4,6 +4,10 @@ Domain-neutral, pure-Rust OCR. Input an image, get back words with bounding
 boxes and confidences. No Python, no C/C++, no cloud, no network — fully offline
 and deterministic.
 
+## Spine 家族 / Spine family
+
+本仓库是 Spine 家族的成员之一（角色：L0 底座）。家族全部成员、分层、依赖方向、依赖形式与当前差距见 [`docs/spine-family.md`](docs/spine-family.md)；该文件在每个家族仓库中的副本内容相同，真源在家族根目录 `~/startup/spine/docs/spine-family.md`，用根目录 `make family-doc-sync` 同步。
+
 ## What it is
 
 A generic OCR engine: feed it pixels (RGB or grayscale) or encoded image bytes
