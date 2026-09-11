@@ -40,6 +40,19 @@ print(ocrspine_models.keys_path())   # .../ppocr_keys_v5.txt
 Only the default zh/en/ja model set ships here. Language-evaluation artifacts that
 live in the `ocrspine` repo (e.g. the Thai recognition model) are out of scope.
 
+## Version policy
+
+The package version is **0.0.3**, declared in `pyproject.toml`, and is independent
+of the Rust engine and host package versions. An engine-only change does not
+automatically require a new model-package version.
+
+Any model-package content change intended for publication requires a new
+model-package version, including changed weights or dictionaries and packaging
+or metadata corrections. Never reuse an already published version for changed
+contents. This policy does not publish a new version or change the current
+default model set. Package installation may access the network; model loading
+and inference remain local.
+
 ## License
 
 Apache-2.0. The redistributed PP-OCR model weights are Copyright (c) PaddlePaddle

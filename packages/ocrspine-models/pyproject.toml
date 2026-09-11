@@ -13,7 +13,9 @@ name = "ocrspine-models"
 #
 # Static version: it tracks the bundled default model set (det / rec / cls + the
 # zh/en/ja recognition dictionary), which changes rarely and independently of the
-# host releases. Bump it only when the shipped weights change.
+# host releases. Engine-only changes do not automatically bump this version.
+# Any package content change intended for publication (weights, dictionary,
+# packaging or metadata) requires a new version; never reuse a published one.
 version = "0.0.3"
 description = "Default PP-OCRv5 ONNX model weights for the ocrspine PaddleOCR engine (shared data companion for pdfspine / pptspine / docspine)."
 readme = "README.md"

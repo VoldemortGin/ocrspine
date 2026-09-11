@@ -47,7 +47,7 @@ for word in engine.recognize(&image)? {
 
 ## Models
 
-The three ONNX model files (~28 MB) live in `models/` and are loaded from disk at
+The default three ONNX model files (~28 MB) live in `models/` and are loaded from disk at
 runtime (offline, no network). Resolution order:
 
 1. the `OCRSPINE_MODELS` environment variable, if set, points at the directory
@@ -56,6 +56,12 @@ runtime (offline, no network). Resolution order:
    `cargo test` and a source checkout work with no setup.
 
 The tiny recognition dictionary is embedded into the binary at compile time.
+
+The separately versioned `ocrspine-models` data package is currently **0.0.3**.
+It ships the default zh/en/ja set: `ppocrv5_det.onnx`, `ppocrv5_rec.onnx`,
+`ppocrv5_cls.onnx` and `ppocr_keys_v5.txt`. Thai evaluation files in this
+repository are excluded from that package. See the
+[data-package scope and version policy](packages/ocrspine-models/README.md).
 
 See [`models/PROVENANCE.md`](models/PROVENANCE.md) for the full provenance,
 licensing (Apache-2.0, PaddlePaddle Authors), and conversion record of the
@@ -74,18 +80,20 @@ against the real models, and asserts the reference lines are recognized.
 
 ## Publishing
 
-This crate is currently `publish = false` and intended as a local **path
-dependency** for sibling crates:
+This crate remains `publish = false` (not published on crates.io). Consumers
+use the public git repository with a complete, fixed commit, for example:
 
 ```toml
 [dependencies]
-ocrspine = { path = "../ocrspine" }
+ocrspine = { git = "https://github.com/VoldemortGin/ocrspine", rev = "732975f0233cd6500edfbbb82bc06c2332369871" }
 ```
 
-To publish later (crates.io or a git dependency), note that the ~28 MB ONNX
-weights in `models/` would be packaged with the crate (or fetched out-of-band by
-consumers via `OCRSPINE_MODELS`). For a git dependency, point at the repo and
-commit the `models/` directory.
+This is the commit used by docspine and pptspine in their verified 2026-09-10
+consumer builds. It is a reproducible consumption example, not a promise that
+it contains the latest OCR changes. Consumers select and validate any later
+revision explicitly; this documentation does not change their dependencies.
+Cargo may fetch git/crate sources during preparation. The git checkout includes
+`models/`; inference loads local files and does not download models at runtime.
 
 The model weights, separately, **are** published — as a standalone pure-data
 Python package, [`ocrspine-models`](https://pypi.org/project/ocrspine-models/)
