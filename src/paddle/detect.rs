@@ -344,21 +344,37 @@ pub(crate) fn detect(
         boxes = merge_row_boxes(boxes, x_ratio, params.merge_y_ratio, ow, oh);
     }
 
-    // 7) Sort top-to-bottom, then left-to-right. Group rows by a y-tolerance so
-    //    boxes on the same visual line read left-to-right.
-    boxes.sort_by(|a, b| {
-        let ay = (a.y0 + a.y1) / 2;
-        let by = (b.y0 + b.y1) / 2;
-        // Same line if vertical centers are within half the smaller box height.
-        let tol = ((a.y1 - a.y0).min(b.y1 - b.y0) / 2).max(1);
-        if (ay - by).abs() <= tol {
-            a.x0.cmp(&b.x0)
-        } else {
-            ay.cmp(&by)
-        }
-    });
+    // 7) Sort top-to-bottom, then left-to-right (reading order).
+    sort_reading_order(&mut boxes);
 
     Ok(boxes)
+}
+
+/// Reading order: lines top-to-bottom, boxes within a line left-to-right.
+///
+/// A y-tolerance "same line" test is not transitive, so it must not live inside a
+/// comparator (Rust >= 1.81 `sort_by` panics on non-total orders). Instead sort by
+/// a total key (vertical center, then x0), then greedily group consecutive boxes
+/// whose center is within half the smaller height of the line's first box, and
+/// sort each group by x0.
+fn sort_reading_order(boxes: &mut [DetBox]) {
+    let cy = |b: &DetBox| (b.y0 + b.y1) / 2;
+    boxes.sort_by_key(|b| (cy(b), b.x0));
+    let mut start = 0;
+    while start < boxes.len() {
+        let (ay, ah) = (cy(&boxes[start]), boxes[start].y1 - boxes[start].y0);
+        let mut end = start + 1;
+        while end < boxes.len() {
+            let b = &boxes[end];
+            let tol = (ah.min(b.y1 - b.y0) / 2).max(1);
+            if cy(b) - ay > tol {
+                break;
+            }
+            end += 1;
+        }
+        boxes[start..end].sort_by_key(|b| (b.x0, cy(b)));
+        start = end;
+    }
 }
 
 /// 文本行框聚类合并（仅泰文 profile 等显式开启时调用）。
@@ -822,4 +838,59 @@ pub(crate) fn unclip_rect(r: &RotatedRect, unclip_ratio: f32) -> [(f32, f32); 4]
         corner(1.0, 1.0),
         corner(-1.0, 1.0),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bx(x0: i32, y0: i32, w: i32, h: i32) -> DetBox {
+        DetBox {
+            x0,
+            y0,
+            x1: x0 + w,
+            y1: y0 + h,
+            score: 1.0,
+            quad: [(0.0, 0.0); 4],
+            angle: 0.0,
+        }
+    }
+
+    /// Staggered boxes (each line a few px lower than its neighbour) make the old
+    /// y-tolerance comparator non-transitive; Rust >= 1.81 `sort_by` panics on it.
+    #[test]
+    fn reading_order_sort_is_total_on_staggered_boxes() {
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = |m: i32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % m as u64) as i32
+        };
+        for _ in 0..50 {
+            let mut boxes: Vec<DetBox> = (0..400)
+                .map(|_| bx(next(2000), next(3000), 10 + next(200), 8 + next(40)))
+                .collect();
+            sort_reading_order(&mut boxes);
+            assert_eq!(boxes.len(), 400);
+        }
+    }
+
+    #[test]
+    fn reading_order_groups_lines_then_left_to_right() {
+        // Two lines; the right box of line 1 sits slightly higher than the left.
+        let mut boxes = vec![
+            bx(300, 58, 80, 20),
+            bx(10, 100, 80, 20),
+            bx(200, 52, 80, 20),
+            bx(10, 55, 80, 20),
+            bx(150, 102, 80, 20),
+        ];
+        sort_reading_order(&mut boxes);
+        let order: Vec<(i32, i32)> = boxes.iter().map(|b| (b.x0, b.y0)).collect();
+        assert_eq!(
+            order,
+            vec![(10, 55), (200, 52), (300, 58), (10, 100), (150, 102)]
+        );
+    }
 }
